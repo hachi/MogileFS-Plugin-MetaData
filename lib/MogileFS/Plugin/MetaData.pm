@@ -11,6 +11,9 @@ package MogileFS::Plugin::MetaData;
 use strict;
 use warnings;
 
+our $VERSION = '0.00_01';
+$VERSION = eval $VERSION;
+
 my %name_to_nameid;
 my %nameid_to_name;
 
