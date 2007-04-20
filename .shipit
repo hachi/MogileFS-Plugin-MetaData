@@ -1,7 +1,6 @@
 # auto-generated shipit config file.
 steps = FindVersion, ChangeVersion, CheckChangeLog, DistTest, Commit, Tag, MakeDist, UploadCPAN
 
-# svn.tagpattern = MyProj-%v
-# svn.tagpattern = http://code.example.com/svn/tags/MyProj-%v
+svk.tagpattern = MogileFS-Plugin-MetaData-%v
 
 # CheckChangeLog.files = ChangeLog, MyProj.CHANGES
