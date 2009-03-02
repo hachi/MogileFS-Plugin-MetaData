@@ -1,11 +1,3 @@
-# FilePaths plugin for MogileFS, by xb95
-
-#
-# This plugin enables full pathing support within MogileFS, for creating files,
-# listing files in a directory, deleting files, etc.
-#
-# Supports most functionality you'd expect.
-
 package MogileFS::Plugin::MetaData;
 
 use strict;
