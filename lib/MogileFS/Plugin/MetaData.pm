@@ -28,17 +28,12 @@ sub delete_metadata {
 sub get_metadata {
     my ($fid) = @_;
 
-    my $dbh = Mgd::get_dbh();
+    # retrieve all meta-data for this fid
+    my $sto = Mgd::get_store();
+    my $meta = $sto->plugin_metadata_get_metadata_by_fid($fid);
 
     my $meta_by_name = {};
-
-    my $sth = $dbh->prepare('SELECT nameid, data FROM plugin_metadata_data WHERE fid=?');
-
-    $sth->execute($fid);
-
-    die "DBH Error on SELECT: " . $dbh->errstr if $dbh->err;
-
-    while (my ($nameid, $data) = $sth->fetchrow_array) {
+    foreach my $nameid (keys %$meta) {
         my $name = $nameid_to_name{$nameid};
         unless (exists $nameid_to_name{$nameid}) {
             ($name) = $dbh->selectrow_array('SELECT name FROM plugin_metadata_names WHERE nameid=?', undef, $nameid);
@@ -46,7 +41,7 @@ sub get_metadata {
             $nameid_to_name{$nameid} = $name;
             $name_to_nameid{$name} = $nameid;
         }
-        $meta_by_name->{$name} = $data;
+        $meta_by_name->{$name} = $meta->{$nameid};
     }
 
     return $meta_by_name;
@@ -136,6 +131,21 @@ sub plugin_metadata_delete_metadata {
         return undef if $dbh->err;
         return 1;
     });
+}
+
+sub plugin_metadata_get_metadata_by_fid {
+    my $self = shift;
+    my ($fid) = @_;
+    my $dbh = $self->dbh;
+    my $sth = $dbh->prepare('SELECT nameid, data FROM plugin_metadata_data WHERE fid = ?');
+    $sth->execute($fid);
+
+    my $meta = {};
+    while (my $row = $sth->fetchrow_arrayref()) {
+        $meta->{$row->[0]} = $row->[1];
+    }
+
+    return $meta;
 }
 
 __PACKAGE__->add_extra_tables("plugin_metadata_names", "plugin_metadata_data");
