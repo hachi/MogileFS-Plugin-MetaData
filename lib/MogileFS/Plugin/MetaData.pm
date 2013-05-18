@@ -20,11 +20,9 @@ sub unload {
 sub delete_metadata {
     my ($fid) = @_;
 
-    my $dbh = Mgd::get_dbh();
-
-    $dbh->do('DELETE FROM plugin_metadata_data WHERE fid=?', undef, $fid);
-
-    warn "DBI Error while deleting fid '$fid': " . $dbh->errstr if $dbh->err;
+    # delete all meta-data for this fid
+    my $sto = Mgd::get_store();
+    $sto->plugin_metadata_delete_metadata($fid);
 }
 
 sub get_metadata {
@@ -128,6 +126,17 @@ CREATE TABLE plugin_metadata_data (
     PRIMARY KEY (fid, nameid)
 )
 " }
+
+sub plugin_metadata_delete_metadata {
+    my $self = shift;
+    my ($fid) = @_;
+    return $self->retry_on_deadlock(sub {
+        my $dbh = $self->dbh;
+        $dbh->do('DELETE FROM plugin_metadata_data WHERE fid = ?', undef, $fid);
+        return undef if $dbh->err;
+        return 1;
+    });
+}
 
 __PACKAGE__->add_extra_tables("plugin_metadata_names", "plugin_metadata_data");
 
