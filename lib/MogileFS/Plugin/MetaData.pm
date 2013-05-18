@@ -29,10 +29,30 @@ sub get_metadata {
     my $sto = Mgd::get_store();
     my $meta = $sto->plugin_metadata_get_metadata_by_fid($fid);
 
+    # replace $nameid with $name
     my $meta_by_name = {};
     foreach my $nameid (keys %$meta) {
         my $name = _get_name($nameid);
         $meta_by_name->{$name} = $meta->{$nameid};
+    }
+
+    return $meta_by_name;
+}
+
+# return the metadata for all the listed fids in the format: $meta->{$fid}->{$name}
+sub get_bulk_metadata {
+    my @fids = @_;
+
+    # retrieve all the meta-data for the specified fids
+    my $sto = Mgd::get_store();
+    my $meta = $sto->plugin_metadata_get_metadata_by_fids;
+
+    # replace $nameid with $name
+    my $meta_by_name = {};
+    foreach my $fid (keys %$meta) {
+        foreach my $nameid (keys %{$meta->{$fid}}) {
+            $meta_by_name->{$fid}->{_get_name($nameid)} = $meta->{$fid}->{$nameid};
+        }
     }
 
     return $meta_by_name;
@@ -176,6 +196,25 @@ sub plugin_metadata_get_metadata_by_fid {
     my $meta = {};
     while (my $row = $sth->fetchrow_arrayref()) {
         $meta->{$row->[0]} = $row->[1];
+    }
+
+    return $meta;
+}
+
+sub plugin_metadata_get_metadata_by_fids {
+    my $self = shift;
+    my @fids = @_;
+    return {} if(!@fids);
+
+    my $dbh = $self->dbh;
+    my $sth = $dbh->prepare('SELECT fid, nameid, data ' .
+                            'FROM plugin_metadata_data ' .
+                            'WHERE fid IN (' . join(',', (('?') x scalar @fids)) . ')');
+    $sth->execute(@fids);
+
+    my $meta = {};
+    while (my $row = $sth->fetchrow_arrayref()) {
+        $meta->{$row->[0]}->{$row->[1]} = $row->[2];
     }
 
     return $meta;
