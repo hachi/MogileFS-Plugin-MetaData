@@ -41,8 +41,6 @@ sub get_metadata {
 sub set_metadata {
     my ($fid, $meta_by_name) = @_;
 
-    my $dbh = Mgd::get_dbh();
-
     my $meta_by_nameid = {};
     foreach my $name (keys %$meta_by_name) {
         my $nameid = _get_nameid($name, 1);
@@ -54,10 +52,13 @@ sub set_metadata {
         $meta_by_nameid->{$nameid} = $meta_by_name->{$name};
     }
 
+    my $sto = Mgd::get_store();
     foreach my $nameid (keys %$meta_by_nameid) {
-        $dbh->do('INSERT INTO plugin_metadata_data (fid, nameid, data) VALUES (?, ?, ?)',
-                 undef, $fid, $nameid, $meta_by_nameid->{$nameid});
-        warn "DBH Error on insert of metadata: " . $dbh->errstr if $dbh->err;
+        $sto->plugin_metadata_add_metadata(
+            'fid'    => $fid,
+            'nameid' => $nameid,
+            'data'   => $meta_by_nameid->{$nameid},
+        );
     }
 
     return 1;
@@ -140,6 +141,19 @@ CREATE TABLE plugin_metadata_data (
     PRIMARY KEY (fid, nameid)
 )
 " }
+
+sub plugin_metadata_add_metadata {
+    my $self = shift;
+    my %arg  = $self->_valid_params([qw(fid nameid data)], @_);
+
+    return $self->retry_on_deadlock(sub {
+        my $dbh = $self->dbh;
+        $dbh->do('INSERT INTO plugin_metadata_data (fid, nameid, data) '.
+                 'VALUES (?,?,?) ', undef,
+                 @arg{'fid', 'nameid', 'data'});
+        return 1;
+    });
+}
 
 sub plugin_metadata_delete_metadata {
     my $self = shift;
