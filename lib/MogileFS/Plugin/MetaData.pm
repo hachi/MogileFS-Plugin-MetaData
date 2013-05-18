@@ -45,7 +45,7 @@ sub get_bulk_metadata {
 
     # retrieve all the meta-data for the specified fids
     my $sto = Mgd::get_store();
-    my $meta = $sto->plugin_metadata_get_metadata_by_fids;
+    my $meta = $sto->plugin_metadata_get_metadata_by_fids(@fids);
 
     # replace $nameid with $name
     my $meta_by_name = {};
