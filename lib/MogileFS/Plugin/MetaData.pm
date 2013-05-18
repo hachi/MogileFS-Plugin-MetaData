@@ -6,9 +6,6 @@ use warnings;
 our $VERSION = '0.01';
 $VERSION = eval $VERSION;
 
-my %name_to_nameid;
-my %nameid_to_name;
-
 sub load {
     return 1;
 }
@@ -34,13 +31,7 @@ sub get_metadata {
 
     my $meta_by_name = {};
     foreach my $nameid (keys %$meta) {
-        my $name = $nameid_to_name{$nameid};
-        unless (exists $nameid_to_name{$nameid}) {
-            ($name) = $dbh->selectrow_array('SELECT name FROM plugin_metadata_names WHERE nameid=?', undef, $nameid);
-            die "DBH Error while getting nameid->name mapping: " . $dbh->errstr if $dbh->err;
-            $nameid_to_name{$nameid} = $name;
-            $name_to_nameid{$name} = $nameid;
-        }
+        my $name = _get_name($nameid);
         $meta_by_name->{$name} = $meta->{$nameid};
     }
 
@@ -53,40 +44,14 @@ sub set_metadata {
     my $dbh = Mgd::get_dbh();
 
     my $meta_by_nameid = {};
-
-    # Flag indicating if we've inserted and decided to redo the loop, to prevent infinite loops.
-    my $inserted = 0;
-
     foreach my $name (keys %$meta_by_name) {
-        my $nameid = $name_to_nameid{$name};
+        my $nameid = _get_nameid($name, 1);
 
-        unless (exists $name_to_nameid{$name}) {
-            ($nameid) = $dbh->selectrow_array('SELECT nameid FROM plugin_metadata_names WHERE name=?', undef, $name);
-            warn "DBH Error on SELECT: " . $dbh->errstr if $dbh->err;
-            $nameid_to_name{$nameid} = $name;
-            $name_to_nameid{$name} = $nameid;
-        }
-
-        if ($inserted && ! $nameid) {
+        if (!defined $nameid) {
             die "Bailing out, unable to get a metadata nameid for '$name'";
         }
 
-        unless ($nameid) {
-            $dbh->do('INSERT IGNORE INTO plugin_metadata_names (name) VALUES (?)', undef, $name);
-            warn "DBH Error on insert: " . $dbh->errstr if $dbh->err;
-            $nameid = $dbh->{mysql_insertid};
-
-            unless ($nameid) {
-                $inserted = 1;
-                redo;
-            }
-        }
-
-        $nameid += 0;
-
         $meta_by_nameid->{$nameid} = $meta_by_name->{$name};
-    } continue {
-        $inserted = 0;
     }
 
     foreach my $nameid (keys %$meta_by_nameid) {
@@ -96,6 +61,60 @@ sub set_metadata {
     }
 
     return 1;
+}
+
+# in memory cache of metadata names
+# id => name mappings are never deleted so cache them indefinitely
+my %name_to_nameid;
+my %nameid_to_name;
+
+sub _get_name {
+    my ($nameid) = @_;
+
+    unless(defined $nameid_to_name{$nameid}) {
+        # retrieve the name for the specified nameid
+        my $sto = Mgd::get_store();
+        my $name = $sto->plugin_metadata_get_name_by_nameid($nameid);
+
+        # update the namemap
+        if(defined $name) {
+            $nameid_to_name{$nameid} = $name;
+            $name_to_nameid{lc($name)} = $nameid;
+        }
+    }
+
+    return $nameid_to_name{$nameid};
+}
+
+sub _get_nameid {
+    my ($name, $create) = @_;
+    my $sto = Mgd::get_store();
+
+    unless(defined $name_to_nameid{lc($name)}) {
+        # retrieve the nameid for the specified name
+        my $nameid = $sto->plugin_metadata_get_nameid_by_name($name);
+
+        # update the namemap
+        if(defined($nameid)) {
+            $name_to_nameid{lc($name)} = $nameid;
+            $nameid_to_name{$nameid} = $name;
+        }
+    }
+
+    if(!defined $name_to_nameid{lc($name)} && $create) {
+        # register the metadata name
+        my $nameid = $sto->plugin_metadata_add_name($name);
+
+        # update the namemap
+        if(defined($nameid)) {
+            $name_to_nameid{lc($name)} = $nameid;
+            $nameid_to_name{$nameid} = $name;
+        }
+
+        return _get_nameid($name);
+    }
+
+    return $name_to_nameid{$name};
 }
 
 package MogileFS::Store;
@@ -146,6 +165,32 @@ sub plugin_metadata_get_metadata_by_fid {
     }
 
     return $meta;
+}
+
+sub plugin_metadata_get_name_by_nameid {
+    my $self = shift;
+    my ($nameid) = @_;
+    my $dbh = $self->dbh;
+    my ($name) = $dbh->selectrow_array('SELECT name FROM plugin_metadata_names WHERE nameid = ?', undef, $nameid);
+    return $name;
+}
+
+sub plugin_metadata_get_nameid_by_name {
+    my $self = shift;
+    my ($name) = @_;
+    my $dbh = $self->dbh;
+    my ($nameid) = $dbh->selectrow_array('SELECT nameid FROM plugin_metadata_names WHERE name = ?', undef, $name);
+    return $nameid;
+}
+
+sub plugin_metadata_add_name {
+    my $self = shift;
+    my ($name) = @_;
+    return $self->retry_on_deadlock(sub {
+        my $dbh = $self->dbh;
+        $dbh->do('INSERT INTO plugin_metadata_names (name) VALUES (?) ', undef, $name);
+        return $dbh->last_insert_id(undef, undef, 'plugin_metadata_names', 'nameid');
+    });
 }
 
 __PACKAGE__->add_extra_tables("plugin_metadata_names", "plugin_metadata_data");
